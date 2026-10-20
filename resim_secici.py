@@ -2,6 +2,7 @@ import discord
 import os
 import random
 import requests
+import urllib.parse
 # Discord botları için komut tabanlı bir framework sağlar.
 # Bu framework sayesinde, botumuzun belirli komutlara yanıt vermesini kolayca tanımlayabiliriz.
 from discord.ext import commands
@@ -73,4 +74,72 @@ async def anime(ctx, *, anime_adi: str = "tokyo"):
         await ctx.send(image_url)
     else:
         await ctx.send(f"'{anime_adi}' adında bir anime bulunamadı!")
+
+def get_futbolcu_bilgi(oyuncu_adi):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    
+    # 1. Adım: Arama terimine 'futbolcu' ekleyip Wikipedia'da doğrudan aratıyoruz
+    search_url = "https://tr.wikipedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "list": "search",
+        "srsearch": f"{oyuncu_adi} futbolcu",
+        "format": "json"
+    }
+    
+    try:
+        r = requests.get(search_url, params=params, headers=headers, timeout=5)
+        data = r.json()
+        search_results = data.get("query", {}).get("search", [])
+        
+        # Sonuç bulunamazsa sadece girdiği ismi arat
+        if not search_results:
+            params["srsearch"] = oyuncu_adi
+            r = requests.get(search_url, params=params, headers=headers, timeout=5)
+            data = r.json()
+            search_results = data.get("query", {}).get("search", [])
+            
+        if not search_results:
+            return None
+            
+        # İlk sonucun tam sayfa başlığını al
+        page_title = search_results[0]["title"]
+        
+        # 2. Adım: Başlığın özetini ve görselini çek
+        summary_url = f"https://tr.wikipedia.org/api/rest_v1/page/summary/{page_title}"
+        sum_res = requests.get(summary_url, headers=headers, timeout=5)
+        sum_data = sum_res.json()
+        
+        return {
+            "isim": sum_data.get("title"),
+            "ozet": sum_data.get("extract"),
+            "foto": sum_data.get("thumbnail", {}).get("source")
+        }
+    except Exception as e:
+        print(f"Hata detayı: {e}")
+        return None
+
+@bot.command('futbolcu')
+async def futbolcu(ctx, *, isim: str):
+    bilgi = get_futbolcu_bilgi(isim)
+    
+    if not bilgi or not bilgi.get('ozet'):
+        await ctx.send(f"**{isim}** bulunamadı.")
+        return
+        
+    metin = bilgi['ozet']
+    if len(metin) > 450:
+        metin = metin[:450] + "..."
+        
+    embed = discord.Embed(
+        title=bilgi['isim'], 
+        description=metin,
+        color=discord.Color.green()
+    )
+    if bilgi.get('foto'):
+        embed.set_image(url=bilgi['foto'])
+        
+    await ctx.send(embed=embed)
 bot.run("TOKENİ_BURAYA_YAZIN")
